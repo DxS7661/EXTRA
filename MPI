@@ -1,0 +1,59 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+#include <time.h>
+
+#define ROWS_W 3
+#define COLS_W 2
+#define COLS_X 2
+
+void fullyConnectedLayer(float W[ROWS_W][COLS_W], float X[COLS_X], float output[ROWS_W]) {
+    #pragma omp parallel for
+    for (int i = 0; i < ROWS_W; ++i) {
+        output[i] = 0.0;
+        for (int j = 0; j < COLS_W; ++j) {
+            output[i] += W[i][j] * X[j];
+        }
+        // Apply ReLU activation function
+        output[i] = (output[i] > 0) ? output[i] : 0;
+    }
+}
+
+int main() {
+    float W[ROWS_W][COLS_W] = {{100.0, -200.0}, {300.0, 400.0}, {-500.0, 600.0}};
+    float X[COLS_X] = {200.0, -300.0};
+    float output[ROWS_W];
+
+    // Measure execution time
+    clock_t start_time = clock();
+
+    // Perform fully connected layer operation in parallel using OpenMP
+    fullyConnectedLayer(W, X, output);
+
+    // Calculate execution time
+    clock_t end_time = clock();
+    double execution_time = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
+
+    // Display results
+    printf("Input X:\n");
+    for (int i = 0; i < COLS_X; ++i) {
+        printf("%f ", X[i]);
+    }
+
+    printf("\n\nWeight Matrix W:\n");
+    for (int i = 0; i < ROWS_W; ++i) {
+        for (int j = 0; j < COLS_W; ++j) {
+            printf("%f ", W[i][j]);
+        }
+        printf("\n");
+    }
+
+    printf("\nOutput after fully connected layer with ReLU activation:\n");
+    for (int i = 0; i < ROWS_W; ++i) {
+        printf("%f ", output[i]);
+    }
+
+    printf("\n\nExecution Time: %f seconds\n", execution_time);
+
+    return 0;
+}
