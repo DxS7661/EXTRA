@@ -1,59 +1,104 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <omp.h>
+#include <mpi.h>
 #include <time.h>
 
 #define ROWS_W 3
 #define COLS_W 2
 #define COLS_X 2
 
-void fullyConnectedLayer(float W[ROWS_W][COLS_W], float X[COLS_X], float output[ROWS_W]) {
-    #pragma omp parallel for
-    for (int i = 0; i < ROWS_W; ++i) {
+void fullyConnectedLayer(float* W, float* X, float* output, int start_row, int end_row) {
+    for (int i = start_row; i < end_row; ++i) {
         output[i] = 0.0;
         for (int j = 0; j < COLS_W; ++j) {
-            output[i] += W[i][j] * X[j];
+            output[i] += W[i * COLS_W + j] * X[j];
         }
         // Apply ReLU activation function
         output[i] = (output[i] > 0) ? output[i] : 0;
     }
 }
 
-int main() {
-    float W[ROWS_W][COLS_W] = {{100.0, -200.0}, {300.0, 400.0}, {-500.0, 600.0}};
-    float X[COLS_X] = {200.0, -300.0};
-    float output[ROWS_W];
+int main(int argc, char** argv) {
+    int rank, size;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    if (size < 2) {
+        if (rank == 0) {
+            printf("This example assumes at least 2 MPI processes. Exiting.\n");
+        }
+        MPI_Finalize();
+        return 1;
+    }
+
+    float *W, *X, *output;
+    int rows_per_process = ROWS_W / size;
+
+    // Allocate memory for local data
+    W = (float*)malloc(rows_per_process * COLS_W * sizeof(float));
+    X = (float*)malloc(COLS_X * sizeof(float));
+    output = (float*)malloc(rows_per_process * sizeof(float));
+
+    // Initialize local data with larger arbitrary numbers
+    for (int i = 0; i < rows_per_process; ++i) {
+        for (int j = 0; j < COLS_W; ++j) {
+            W[i * COLS_W + j] = (rank * rows_per_process + i + 1) * 10.0;  // Arbitrary numbers
+        }
+    }
+
+    for (int i = 0; i < COLS_X; ++i) {
+        X[i] = (i + 1) * 20.0;  // Arbitrary numbers
+    }
+
+    // Gather input vector to all processes
+    MPI_Bcast(X, COLS_X, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+    // Scatter weight matrix to processes
+    MPI_Scatter(W, rows_per_process * COLS_W, MPI_FLOAT, W, rows_per_process * COLS_W, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
     // Measure execution time
     clock_t start_time = clock();
 
-    // Perform fully connected layer operation in parallel using OpenMP
-    fullyConnectedLayer(W, X, output);
+    // Perform local computation
+    fullyConnectedLayer(W, X, output, 0, rows_per_process);
+
+    // Gather results to process 0
+    MPI_Gather(output, rows_per_process, MPI_FLOAT, output, rows_per_process, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
     // Calculate execution time
     clock_t end_time = clock();
     double execution_time = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
 
-    // Display results
-    printf("Input X:\n");
-    for (int i = 0; i < COLS_X; ++i) {
-        printf("%f ", X[i]);
-    }
-
-    printf("\n\nWeight Matrix W:\n");
-    for (int i = 0; i < ROWS_W; ++i) {
-        for (int j = 0; j < COLS_W; ++j) {
-            printf("%f ", W[i][j]);
+    // Display results (only on process 0)
+    if (rank == 0) {
+        printf("Input X:\n");
+        for (int i = 0; i < COLS_X; ++i) {
+            printf("%f ", X[i]);
         }
-        printf("\n");
+
+        printf("\n\nWeight Matrix W:\n");
+        for (int i = 0; i < ROWS_W; ++i) {
+            for (int j = 0; j < COLS_W; ++j) {
+                printf("%f ", W[i * COLS_W + j]);
+            }
+            printf("\n");
+        }
+
+        printf("\nOutput after fully connected layer with ReLU activation:\n");
+        for (int i = 0; i < ROWS_W; ++i) {
+            printf("%f ", output[i]);
+        }
+
+        printf("\n\nExecution Time: %f seconds\n", execution_time);
     }
 
-    printf("\nOutput after fully connected layer with ReLU activation:\n");
-    for (int i = 0; i < ROWS_W; ++i) {
-        printf("%f ", output[i]);
-    }
+    // Free allocated memory
+    free(W);
+    free(X);
+    free(output);
 
-    printf("\n\nExecution Time: %f seconds\n", execution_time);
-
+    MPI_Finalize();
     return 0;
 }
