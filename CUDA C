@@ -1,0 +1,88 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+#define ROWS_W 3
+#define COLS_W 2
+#define COLS_X 2
+
+__global__ void fullyConnectedLayer(float* W, float* X, float* output) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (tid < ROWS_W) {
+        output[tid] = 0.0;
+        for (int j = 0; j < COLS_W; ++j) {
+            output[tid] += W[tid * COLS_W + j] * X[j];
+        }
+        // Apply ReLU activation function
+        output[tid] = (output[tid] > 0) ? output[tid] : 0;
+    }
+}
+
+int main() {
+    float *h_W, *h_X, *h_output;  // Host arrays
+    float *d_W, *d_X, *d_output;  // Device arrays
+
+    // Allocate memory on the host
+    h_W = (float*)malloc(ROWS_W * COLS_W * sizeof(float));
+    h_X = (float*)malloc(COLS_X * sizeof(float));
+    h_output = (float*)malloc(ROWS_W * sizeof(float));
+
+    // Initialize host data with larger arbitrary numbers
+    for (int i = 0; i < ROWS_W; ++i) {
+        for (int j = 0; j < COLS_W; ++j) {
+            h_W[i * COLS_W + j] = (i * COLS_W + j + 1) * 100.0;  // Arbitrary numbers
+        }
+    }
+
+    for (int i = 0; i < COLS_X; ++i) {
+        h_X[i] = (i + 1) * 200.0;  // Arbitrary numbers
+    }
+
+    // Allocate memory on the device
+    cudaMalloc((void**)&d_W, ROWS_W * COLS_W * sizeof(float));
+    cudaMalloc((void**)&d_X, COLS_X * sizeof(float));
+    cudaMalloc((void**)&d_output, ROWS_W * sizeof(float));
+
+    // Copy data from host to device
+    cudaMemcpy(d_W, h_W, ROWS_W * COLS_W * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_X, h_X, COLS_X * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Define the grid and block dimensions
+    int block_size = 256;
+    int grid_size = (ROWS_W + block_size - 1) / block_size;
+
+    // Launch the kernel
+    fullyConnectedLayer<<<grid_size, block_size>>>(d_W, d_X, d_output);
+
+    // Copy result from device to host
+    cudaMemcpy(h_output, d_output, ROWS_W * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Display results
+    printf("Input X:\n");
+    for (int i = 0; i < COLS_X; ++i) {
+        printf("%f ", h_X[i]);
+    }
+
+    printf("\n\nWeight Matrix W:\n");
+    for (int i = 0; i < ROWS_W; ++i) {
+        for (int j = 0; j < COLS_W; ++j) {
+            printf("%f ", h_W[i * COLS_W + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\nOutput after fully connected layer with ReLU activation:\n");
+    for (int i = 0; i < ROWS_W; ++i) {
+        printf("%f ", h_output[i]);
+    }
+
+    // Free allocated memory
+    free(h_W);
+    free(h_X);
+    free(h_output);
+    cudaFree(d_W);
+    cudaFree(d_X);
+    cudaFree(d_output);
+
+    return 0;
+}
